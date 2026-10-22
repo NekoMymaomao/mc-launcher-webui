@@ -2,179 +2,71 @@
 
 ## 快速开始
 
-### 1. 安装启动器
+1. 下载对应平台的压缩包：Windows 为 `.zip`，Linux 为 `.tar.gz`
+2. 解压后得到 `mc-launcher-server`、命令行版 `mc-launcher` 和 `frontend/`
+3. 启动服务：`./mc-launcher-server -addr 0.0.0.0:9876`
+4. 浏览器打开 `http://localhost:9876`
 
-下载对应平台的启动器：
-- **Windows**: `mc-launcher-windows-amd64.exe`
-- **Linux**: `mc-launcher-linux-amd64.tar.gz`
-- **Android**: `mc-launcher.apk`
+## 数据目录
 
-### 2. 首次运行
+默认 `~/.mc-launcher`（Windows 为 `%USERPROFILE%\.mc-launcher`），可用 `-dir` 指定。
 
-启动器会自动创建以下目录结构：
 ```
 ~/.mc-launcher/
-├── versions/      # 游戏版本
-├── libraries/     # 依赖库
-├── assets/        # 游戏资源
-├── java/          # Java 运行时
-├── mods/          # 模组
-├── shaderpacks/   # 光影包
-├── resourcepacks/ # 资源包
-├── data_packs/    # 数据包
-├── saves/         # 存档
-├── servers.json   # 服务器列表
-├── accounts.json  # 账号数据
-├── settings.json  # 启动器配置
-└── logs/          # 日志文件
+├── settings.json     启动器配置
+├── accounts.json     账号
+├── servers.json      服务器列表
+├── versions/         游戏版本
+├── libraries/        依赖库
+├── assets/           游戏资源
+├── java/             下载的 Java
+├── mods/             模组
+├── shaderpacks/      光影
+├── resourcepacks/    资源包
+└── logs/             日志
 ```
 
----
+## 界面功能
 
-## 基本功能
+- **启动**：选择已安装版本并启动，需先安装 Java
+- **版本**：安装 / 校验 / 删除版本。安装会下载客户端、依赖库、natives、资源索引与全部资源文件，并逐个校验 SHA1
+- **模组**：从 Modrinth 搜索并下载到 `mods/`
+- **账号**：离线登录、微软设备码登录、切换与删除账号
+- **设置**：内存、下载线程、窗口尺寸、Java 路径、语言
+- **文档**：本页与 API 文档
 
-### 安装游戏版本
+## 微软登录
 
-1. 打开启动器
-2. 点击「版本管理」
-3. 点击「安装版本」
-4. 输入版本号（如 `1.20.1`）
-5. 等待下载完成
+1. 点击「Microsoft 登录」
+2. 页面显示验证地址和一段代码
+3. 在浏览器打开该地址，输入代码并完成授权
+4. 页面会自动轮询，成功后刷新账号列表
 
-### 启动游戏
+## Java
 
-1. 在版本列表中选择版本
-2. 点击「启动」按钮
-3. 启动器会自动：
-   - 检查 Java 环境
-   - 下载必要依赖
-   - 启动游戏
+- 启动时按版本 JSON 的 `javaVersion.majorVersion` 自动选择 Java
+- 自动扫描 `JAVA_HOME`、常见安装目录与数据目录下的 `java/`
+- 命令行可用 `mc-launcher java install 17` 下载 Temurin JRE
 
-### 账号登录
+## 命令行
 
-#### 离线模式
-1. 点击「账号管理」
-2. 点击「离线登录」
-3. 输入游戏名称
-
-#### Microsoft 账号
-1. 点击「账号管理」
-2. 点击「Microsoft 登录」
-3. 在浏览器中完成授权
-
----
-
-## Modrinth 模组市场
-
-### 搜索模组
-1. 点击「模组市场」
-2. 输入搜索关键词
-3. 选择需要的模组
-
-### 安装模组
-1. 找到目标模组
-2. 选择对应的 Minecraft 版本
-3. 点击「安装」
-
-### 安装整合包
-1. 搜索整合包
-2. 点击「安装」
-3. 启动器会自动安装所有依赖
-
-### 安装光影/资源包
-1. 切换到「光影」或「资源包」标签
-2. 搜索并安装
-
----
-
-## 配置选项
-
-### 内存设置
-- **最大内存**: 建议 4096MB 以上
-- **最小内存**: 建议 2048MB 以上
-
-### Java 设置
-- 启动器会自动检测系统 Java
-- 也可手动指定 Java 路径
-- 支持自动下载 Temurin JDK
-
-### JVM 参数
-可在设置中添加自定义 JVM 参数：
+```bash
+mc-launcher list
+mc-launcher install 1.20.1
+mc-launcher launch 1.20.1
+mc-launcher verify 1.20.1
+mc-launcher auth offline Steve
+mc-launcher auth ms
+mc-launcher java list
+mc-launcher java install 17
+mc-launcher config show
+mc-launcher lang zh
 ```
--Xmx4G
--Xms2G
--XX:+UseG1GC
-```
-
-### 游戏参数
-可自定义游戏启动参数。
-
----
-
-## 服务器管理
-
-### 添加服务器
-1. 点击「服务器」
-2. 点击「添加服务器」
-3. 输入服务器地址和名称
-
-### 导入服务器
-支持导入 Minecraft 的 `servers.json` 文件。
-
----
-
-## 高级功能
-
-### 崩溃分析
-1. 点击「崩溃报告」
-2. 选择崩溃日志
-3. 启动器会分析并给出建议
-
-### 存档管理
-- 备份存档
-- 恢复存档
-- 管理多版本存档
-
-### 多语言支持
-启动器支持中英文切换：
-- 启动参数: `-lang zh` 或 `-lang en`
-- 环境变量: `MC_LAUNCHER_LANG=zh`
-
----
 
 ## 常见问题
 
-### Q: 提示找不到 Java？
-A: 点击「Java 管理」->「安装 Java」自动下载。
+**提示找不到 Java？** 先执行 `mc-launcher java list`；没有的话执行 `mc-launcher java install 17`。
 
-### Q: 游戏启动失败？
-A: 检查崩溃报告，确认 Java 版本正确（建议 Java 17+）。
+**启动失败？** 查看服务端控制台输出的启动命令行与 Java 报错。
 
-### Q: 模组不兼容？
-A: 确认模组支持的 Minecraft 版本与已安装版本匹配。
-
-### Q: 如何更新启动器？
-A: 重新下载最新版本覆盖安装即可。
-
----
-
-## API 接口
-
-启动器内置 HTTP API，可通过 Web UI 或脚本调用：
-
-```bash
-# 获取版本列表
-curl http://localhost:9876/api/versions
-
-# 安装版本
-curl -X POST http://localhost:9876/api/versions/install \
-  -H "Content-Type: application/json" \
-  -d '{"version":"1.20.1"}'
-
-# 启动游戏
-curl -X POST http://localhost:9876/api/launch \
-  -H "Content-Type: application/json" \
-  -d '{"version":"1.20.1","username":"Player"}'
-```
-
-详细 API 文档见 [API 文档](./api.html)
+**打开 9876 是 404？** 说明没找到前端目录，用 `-static` 指定 `frontend/` 的绝对路径。

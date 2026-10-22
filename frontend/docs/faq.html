@@ -1,13 +1,30 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>常见问题</title></head>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>常见问题</title>
+<style>body{font-family:system-ui,sans-serif;max-width:820px;margin:32px auto;padding:0 16px;line-height:1.7}code{background:#f2f2f2;padding:1px 5px;border-radius:4px}</style>
+</head>
 <body>
 <h1>常见问题 FAQ</h1>
+
+<h2>Q: 打开 http://localhost:9876 是 404 或只有 JSON？</h2>
+<p>A: 服务没找到前端目录。用 <code>-static /绝对路径/frontend</code> 指定，或把 <code>frontend/</code> 放在可执行文件旁边。</p>
+
 <h2>Q: 提示找不到 Java？</h2>
-<p>A: 点击「Java 管理」->「安装 Java」自动下载。</p>
-<h2>Q: 游戏启动失败？</h2>
-<p>A: 检查崩溃报告，确认 Java 版本正确（建议 Java 17+）。</p>
-<h2>Q: 模组不兼容？</h2>
-<p>A: 确认模组支持的 Minecraft 版本与已安装版本匹配。</p>
+<p>A: 先执行 <code>mc-launcher java list</code> 看有没有检测到；没有就执行 <code>mc-launcher java install 17</code> 下载 Temurin JRE，或在设置里手动填 Java 路径。</p>
+
+<h2>Q: Java 版本不对导致启动失败？</h2>
+<p>A: 启动器会按版本 JSON 的 <code>javaVersion.majorVersion</code> 自动挑 Java。1.17+ 需要 Java 17，1.20.5+ 需要 Java 21，老版本需要 Java 8。</p>
+
+<h2>Q: 安装卡住或某些文件失败？</h2>
+<p>A: 安装结束会提示失败文件数。可以调大设置里的下载线程、换下载源，或重试一次（已下载且 SHA1 正确的文件会跳过）。</p>
+
+<h2>Q: 微软登录一直显示等待授权？</h2>
+<p>A: 需要在显示的验证地址里输入页面给出的代码并完成登录；设备码 15 分钟后过期，过期后重新点一次「Microsoft 登录」。</p>
+
+<h2>Q: 模组下载后不生效？</h2>
+<p>A: 启动器只是把文件下载到 <code>mods/</code>，不会安装 Forge/Fabric 这类加载器。模组要生效需要对应加载器环境。</p>
+
+<h2>Q: 支持 macOS / Android 吗？</h2>
+<p>A: 不支持，只维护 Linux 与 Windows。</p>
 </body>
 </html>

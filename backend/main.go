@@ -49,6 +49,14 @@ func main() {
 		}})
 	})
 
+	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, core.Response{Ok: true, Data: map[string]any{
+			"version":  "2.0.0",
+			"baseDir":  core.GetBaseDir(),
+			"accounts": len(core.ListAccounts()),
+		}})
+	})
+
 	mux.HandleFunc("/api/versions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
@@ -96,12 +104,25 @@ func main() {
 
 	mux.HandleFunc("/api/versions/verify", func(w http.ResponseWriter, r *http.Request) {
 		v := r.URL.Query().Get("version")
+		if r.Method == http.MethodPost {
+			var body struct {
+				Version string `json:"version"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			if body.Version != "" {
+				v = body.Version
+			}
+		}
 		if v == "" {
 			writeJSON(w, 400, core.Response{Ok: false, Error: "version 不能为空"})
 			return
 		}
 		ok, msg := core.VerifyVersion(v)
-		writeJSON(w, 200, core.Response{Ok: ok, Error: msg})
+		if ok {
+			writeJSON(w, 200, core.Response{Ok: true, Data: map[string]string{"message": msg}})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: false, Error: msg})
 	})
 
 	mux.HandleFunc("/api/launch", func(w http.ResponseWriter, r *http.Request) {
@@ -173,12 +194,54 @@ func main() {
 		writeJSON(w, 200, core.Response{Ok: true, Data: acc})
 	})
 
+	// 第一步：申请设备码，前端把 userCode 展示给用户
+	mux.HandleFunc("/api/accounts/microsoft/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		dc, err := core.StartMicrosoftLogin("")
+		if err != nil {
+			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true, Data: dc})
+	})
+
+	// 第二步：轮询，未授权时返回 pending=true
+	mux.HandleFunc("/api/accounts/microsoft/poll", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			DeviceCode string `json:"deviceCode"`
+			ClientID   string `json:"clientId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		acc, err := core.PollMicrosoftLogin(body.DeviceCode, body.ClientID)
+		if err == core.ErrAuthPending {
+			writeJSON(w, 200, core.Response{Ok: true, Data: map[string]any{"pending": true}})
+			return
+		}
+		if err != nil {
+			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		core.UpsertAccount(*acc)
+		writeJSON(w, 200, core.Response{Ok: true, Data: map[string]any{"pending": false, "account": acc}})
+	})
+
+	// 兼容旧接口：阻塞式登录（终端场景）
 	mux.HandleFunc("/api/accounts/microsoft", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
 			return
 		}
-		acc, err := core.LoginMicrosoft(false, "")
+		acc, err := core.LoginMicrosoft(true, "")
 		if err != nil {
 			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
 			return
@@ -258,8 +321,98 @@ func main() {
 	mux.HandleFunc("/api/modrinth/search", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		ptype := r.URL.Query().Get("type")
-		off, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-		writeJSON(w, 200, core.ModrinthSearch(q, ptype, off))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		// 兼容前端传 page（1 起）
+		if offset == 0 {
+			if page, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && page > 1 {
+				offset = (page - 1) * 20
+			}
+		}
+		writeJSON(w, 200, core.ModrinthSearch(q, ptype, offset))
+	})
+
+	mux.HandleFunc("/api/modrinth/info/", func(w http.ResponseWriter, r *http.Request) {
+		slug := strings.TrimPrefix(r.URL.Path, "/api/modrinth/info/")
+		if slug == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "slug 不能为空"})
+			return
+		}
+		writeJSON(w, 200, core.ModrinthProject(slug))
+	})
+
+	mux.HandleFunc("/api/modrinth/versions", func(w http.ResponseWriter, r *http.Request) {
+		slug := r.URL.Query().Get("slug")
+		gv := r.URL.Query().Get("game_version")
+		loader := r.URL.Query().Get("loader")
+		if slug == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "slug 不能为空"})
+			return
+		}
+		writeJSON(w, 200, core.ModrinthVersions(slug, gv, loader))
+	})
+
+	mux.HandleFunc("/api/modrinth/install", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Slug        string `json:"slug"`
+			GameVersion string `json:"game_version"`
+			Loader      string `json:"loader"`
+			Type        string `json:"type"`
+			InstanceDir string `json:"instance_dir"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		if body.Slug == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "slug 不能为空"})
+			return
+		}
+		writeJSON(w, 200, core.ModrinthInstall(body.Slug, body.GameVersion, body.Loader, body.Type, body.InstanceDir))
+	})
+
+	mux.HandleFunc("/api/servers", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, 200, core.Response{Ok: true, Data: core.LoadServers()})
+		case http.MethodPost:
+			var body struct {
+				Address string `json:"address"`
+				Name    string `json:"name"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+				return
+			}
+			if err := core.AddServer(body.Address, body.Name); err != nil {
+				writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+				return
+			}
+			writeJSON(w, 200, core.Response{Ok: true, Data: core.LoadServers()})
+		default:
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+		}
+	})
+
+	mux.HandleFunc("/api/servers/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		addr := strings.TrimPrefix(r.URL.Path, "/api/servers/")
+		if addr == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "address 不能为空"})
+			return
+		}
+		ok, err := core.RemoveServer(addr)
+		if err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: ok, Data: core.LoadServers()})
 	})
 
 	if staticDir != "" {
@@ -298,7 +451,7 @@ func findStaticDir() string {
 
 	if exe, err := os.Executable(); err == nil {
 		d := filepath.Dir(exe)
-		candidates = append(candidates, filepath.Join(d, "static"), filepath.Join(d, "..", "frontend"))
+		candidates = append(candidates, filepath.Join(d, "static"), filepath.Join(d, "frontend"), filepath.Join(d, "..", "frontend"))
 	}
 
 	// 工作目录附近的 frontend

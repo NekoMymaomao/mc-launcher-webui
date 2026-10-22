@@ -112,9 +112,14 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 		fmt.Println("✓ 微软授权成功")
 	}
 
+	return exchangeForAccount(msToken, verbose)
+}
+
+// exchangeForAccount 用微软 access_token 换取 Minecraft 账号（XBL → XSTS → MC → profile）
+func exchangeForAccount(msToken string, verbose bool) (*Account, error) {
 	// 步骤 3: Xbox Live 认证
 	xblBody := `{"Properties":{"AuthMethod":"RPS","SiteName":"user.auth.xboxlive.com","RpsTicket":"d=` + msToken + `"},"RelyingParty":"http://auth.xboxlive.com","TokenType":"JWT"}`
-	b, _, _ = httpPostJSON("https://user.auth.xboxlive.com/user/authenticate", xblBody)
+	b, _, _ := httpPostJSON("https://user.auth.xboxlive.com/user/authenticate", xblBody)
 	var xbl map[string]any
 	json.Unmarshal(b, &xbl)
 	xblToken, _ := xbl["Token"].(string)
@@ -131,7 +136,7 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 	var sx map[string]any
 	json.Unmarshal(b, &sx)
 	xstsTok, _ := sx["Token"].(string)
-	
+
 	// DisplayClaims 实际是对象 {"xui":[{"uhs":"..."}]}，同时兼容数组形式
 	uhs := extractUHS(sx)
 	if xstsTok == "" || uhs == "" {
@@ -151,7 +156,7 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 	json.Unmarshal(b, &mj)
 	mcToken, _ := mj["access_token"].(string)
 	if mcToken == "" {
-		return nil, fmt.Errorf("Minecraft 认证失败")
+		return nil, fmt.Errorf("Minecraft 认证失败（该账号可能未拥有 Minecraft）")
 	}
 	if verbose {
 		fmt.Println("✓ Minecraft 认证成功")
@@ -169,7 +174,6 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 	if id2 == "" {
 		id2 = offlineUuid("MicrosoftPlayer")
 	}
-	// 格式化 UUID
 	if len(id2) == 32 {
 		id2 = id2[:8] + "-" + id2[8:12] + "-" + id2[12:16] + "-" + id2[16:20] + "-" + id2[20:]
 	}

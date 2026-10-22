@@ -166,10 +166,21 @@ func parseArgs(raws []json.RawMessage, dst *[]string) {
 			continue
 		}
 		var el struct{ Rules []Rule; Value json.RawMessage }
-		if err := json.Unmarshal(raw, &el); err == nil && ruleAllowed(el.Rules) {
-			var ss []string
-			json.Unmarshal(el.Value, &ss)
-			*dst = append(*dst, ss...)
+		if err := json.Unmarshal(raw, &el); err != nil || !ruleAllowed(el.Rules) {
+			continue
+		}
+		if len(el.Value) == 0 {
+			continue
+		}
+		// value 可能是单个字符串，也可能是字符串数组
+		var one string
+		if err := json.Unmarshal(el.Value, &one); err == nil {
+			*dst = append(*dst, one)
+			continue
+		}
+		var many []string
+		if err := json.Unmarshal(el.Value, &many); err == nil {
+			*dst = append(*dst, many...)
 		}
 	}
 }

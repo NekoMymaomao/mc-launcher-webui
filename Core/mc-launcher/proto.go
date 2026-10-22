@@ -32,6 +32,7 @@ type Settings struct {
 	VersionIsolation bool     `json:"versionIsolation"`
 	Threads          int      `json:"threads"`
 	ListenAddr       string   `json:"listenAddr"`
+	Lang             string   `json:"lang"`
 }
 
 type Account struct {

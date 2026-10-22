@@ -1,25 +1,81 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>API 文档</title></head>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>API 文档</title>
+<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:32px auto;padding:0 16px;line-height:1.7}code{background:#f2f2f2;padding:1px 5px;border-radius:4px}pre{background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:14px}th{background:#f6f8fa}</style>
+</head>
 <body>
 <h1>MC Launcher API 文档</h1>
-<h2>基础信息</h2>
-<p>Base URL: <code>http://localhost:9876/api</code></p>
-<h2>接口列表</h2>
-<table border="1" cellpadding="10">
+<p>Base URL: <code>http://localhost:9876/api</code>。所有响应均为 JSON：<code>{"ok":true,"data":...}</code> 或 <code>{"ok":false,"error":"..."}</code>。</p>
+
+<h2>基础</h2>
+<table>
 <tr><th>方法</th><th>端点</th><th>说明</th></tr>
 <tr><td>GET</td><td>/ping</td><td>健康检查</td></tr>
-<tr><td>GET</td><td>/info</td><td>启动器信息</td></tr>
-<tr><td>GET</td><td>/versions</td><td>版本列表</td></tr>
-<tr><td>POST</td><td>/versions/install</td><td>安装版本</td></tr>
-<tr><td>POST</td><td>/versions/remove</td><td>删除版本</td></tr>
-<tr><td>POST</td><td>/launch</td><td>启动游戏</td></tr>
-<tr><td>GET</td><td>/accounts</td><td>账号列表</td></tr>
-<tr><td>POST</td><td>/accounts/offline</td><td>离线登录</td></tr>
-<tr><td>GET</td><td>/java</td><td>Java 列表</td></tr>
-<tr><td>GET</td><td>/modrinth/search</td><td>搜索模组</td></tr>
-<tr><td>GET</td><td>/config</td><td>获取配置</td></tr>
-<tr><td>PUT</td><td>/config</td><td>更新配置</td></tr>
+<tr><td>GET</td><td>/info</td><td>版本、数据目录、账号数量</td></tr>
 </table>
+
+<h2>版本</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/versions</td><td>已安装版本列表</td></tr>
+<tr><td>POST</td><td>/versions/install</td><td>body: <code>{"version":"1.20.1"}</code></td></tr>
+<tr><td>POST</td><td>/versions/remove</td><td>body: <code>{"version":"1.20.1"}</code></td></tr>
+<tr><td>GET / POST</td><td>/versions/verify</td><td>query 或 body 传 <code>version</code>，校验 SHA1</td></tr>
+<tr><td>POST</td><td>/launch</td><td>body: <code>{"version":"1.20.1","username":"Steve"}</code></td></tr>
+</table>
+
+<h2>账号</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/accounts</td><td>返回 <code>{accounts, current}</code></td></tr>
+<tr><td>PUT</td><td>/accounts</td><td>body: <code>{"uuid":"..."}</code> 切换当前账号</td></tr>
+<tr><td>DELETE</td><td>/accounts?uuid=...</td><td>删除账号</td></tr>
+<tr><td>POST</td><td>/accounts/offline</td><td>body: <code>{"name":"Steve"}</code></td></tr>
+<tr><td>POST</td><td>/accounts/microsoft/start</td><td>返回 <code>userCode / verificationUri / deviceCode / interval / expiresIn</code></td></tr>
+<tr><td>POST</td><td>/accounts/microsoft/poll</td><td>body: <code>{"deviceCode":"..."}</code>，未授权返回 <code>{"pending":true}</code>，成功返回 <code>{"pending":false,"account":{...}}</code></td></tr>
+</table>
+
+<h2>Java</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/java</td><td>已检测到的 Java（path / major / version）</td></tr>
+<tr><td>POST</td><td>/java/install</td><td>body: <code>{"major":17}</code> 下载 Adoptium JRE</td></tr>
+<tr><td>PUT</td><td>/java/set</td><td>body: <code>{"path":"/usr/bin/java"}</code></td></tr>
+</table>
+
+<h2>配置</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/config</td><td>读取配置</td></tr>
+<tr><td>PUT</td><td>/config</td><td>更新配置（maxMemory/minMemory/threads/width/height/javaPath/lang/source）</td></tr>
+</table>
+
+<h2>Modrinth</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/modrinth/search?q=&amp;type=&amp;offset=</td><td>也兼容 <code>page</code>；返回 <code>{hits, total_hits, offset, limit}</code></td></tr>
+<tr><td>GET</td><td>/modrinth/info/{slug}</td><td>项目详情</td></tr>
+<tr><td>GET</td><td>/modrinth/versions?slug=&amp;game_version=&amp;loader=</td><td>版本列表</td></tr>
+<tr><td>POST</td><td>/modrinth/install</td><td>body: <code>{"slug":"...","type":"mods","game_version":"1.20.1","loader":"fabric"}</code></td></tr>
+</table>
+
+<h2>服务器列表</h2>
+<table>
+<tr><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>GET</td><td>/servers</td><td><code>[{name, address}]</code></td></tr>
+<tr><td>POST</td><td>/servers</td><td>body: <code>{"address":"mc.example.com","name":"示例"}</code></td></tr>
+<tr><td>DELETE</td><td>/servers/{address}</td><td>按地址删除</td></tr>
+</table>
+
+<h2>示例</h2>
+<pre>curl http://localhost:9876/api/versions
+
+curl -X POST http://localhost:9876/api/versions/install \
+  -H "Content-Type: application/json" \
+  -d '{"version":"1.20.1"}'
+
+curl -X POST http://localhost:9876/api/launch \
+  -H "Content-Type: application/json" \
+  -d '{"version":"1.20.1","username":"Steve"}'</pre>
 </body>
 </html>

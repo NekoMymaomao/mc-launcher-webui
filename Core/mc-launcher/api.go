@@ -21,6 +21,9 @@ func Init() error {
 		os.MkdirAll(filepath.Join(baseDir, d), 0755)
 	}
 	cfg = loadSettings()
+	if cfg.Lang != "" {
+		curLang = cfg.Lang
+	}
 	accounts = loadAccounts()
 	migrateAccounts()
 	return nil
@@ -81,6 +84,10 @@ func SaveSettings(s *Settings) error {
 	}
 	if s.JVMArgs != nil {
 		cfg.JVMArgs = s.JVMArgs
+	}
+	if s.Lang != "" {
+		cfg.Lang = s.Lang
+		curLang = s.Lang
 	}
 	if s.GameArgs != nil {
 		cfg.GameArgs = s.GameArgs
@@ -171,10 +178,15 @@ func GetLang() string {
 	return curLang
 }
 
-// SetLang 设置语言
+// SetLang 设置语言并持久化到 settings.json
 func SetLang(l string) {
 	if l == "zh-CN" {
 		l = "zh"
 	}
 	curLang = l
+	if cfg == nil {
+		return
+	}
+	cfg.Lang = l
+	cfg.save()
 }

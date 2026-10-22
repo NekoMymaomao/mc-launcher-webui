@@ -1,24 +1,74 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>使用教程</title></head>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>使用教程</title>
+<style>body{font-family:system-ui,sans-serif;max-width:820px;margin:32px auto;padding:0 16px;line-height:1.7}code{background:#f2f2f2;padding:1px 5px;border-radius:4px}pre{background:#f6f8fa;padding:12px;border-radius:6px;overflow:auto}</style>
+</head>
 <body>
 <h1>MC Launcher 使用教程</h1>
+
 <h2>快速开始</h2>
 <ol>
-<li>下载对应平台的启动器</li>
-<li>首次运行会自动创建配置目录</li>
-<li>安装所需的 Minecraft 版本</li>
-<li>启动游戏</li>
+  <li>下载对应平台的压缩包（Windows: <code>.zip</code>；Linux: <code>.tar.gz</code>）</li>
+  <li>解压后得到 <code>mc-launcher-server</code> 与 <code>frontend/</code>（另有命令行版 <code>mc-launcher</code>）</li>
+  <li>运行服务：<code>./mc-launcher-server -addr 0.0.0.0:9876</code></li>
+  <li>浏览器打开 <code>http://localhost:9876</code></li>
 </ol>
-<h2>功能说明</h2>
+
+<h2>数据目录</h2>
+<p>默认 <code>~/.mc-launcher</code>（Windows 为 <code>%USERPROFILE%\.mc-launcher</code>），可用 <code>-dir</code> 指定。</p>
+<pre>~/.mc-launcher/
+├── settings.json     启动器配置
+├── accounts.json     账号
+├── servers.json      服务器列表
+├── versions/         游戏版本
+├── libraries/        依赖库
+├── assets/           游戏资源
+├── java/             下载的 Java
+├── mods/             模组
+├── shaderpacks/      光影
+├── resourcepacks/    资源包
+└── logs/             日志</pre>
+
+<h2>界面功能</h2>
 <ul>
-<li><strong>版本管理</strong>: 安装/删除/验证游戏版本</li>
-<li><strong>账号系统</strong>: 支持离线、Microsoft、Authlib 登录</li>
-<li><strong>Java 管理</strong>: 自动检测或下载 Java 17+</li>
-<li><strong>Modrinth</strong>: 搜索和安装模组/光影/资源包</li>
-<li><strong>服务器</strong>: 管理多人游戏服务器</li>
+  <li><strong>启动</strong>：选择已安装版本并启动，需先安装 Java</li>
+  <li><strong>版本</strong>：安装 / 校验 / 删除版本。安装会下载客户端、依赖库、natives、资源索引与全部资源文件，并逐个校验 SHA1</li>
+  <li><strong>模组</strong>：从 Modrinth 搜索并下载到 <code>mods/</code></li>
+  <li><strong>账号</strong>：离线登录、微软设备码登录、切换与删除账号</li>
+  <li><strong>设置</strong>：内存、下载线程、窗口尺寸、Java 路径、语言</li>
+  <li><strong>文档</strong>：即本页与 API 文档</li>
 </ul>
-<h2>API 使用</h2>
-<pre>curl http://localhost:9876/api/versions</pre>
+
+<h2>微软登录</h2>
+<ol>
+  <li>点击「Microsoft 登录」</li>
+  <li>页面会显示一个验证地址和一段代码</li>
+  <li>在浏览器打开该地址，输入代码并完成授权</li>
+  <li>页面会自动轮询并在成功后刷新账号列表</li>
+</ol>
+
+<h2>Java</h2>
+<ul>
+  <li>启动时按版本 JSON 的 <code>javaVersion.majorVersion</code> 自动选择 Java</li>
+  <li>会自动扫描 <code>JAVA_HOME</code>、常见安装目录与数据目录下的 <code>java/</code></li>
+  <li>命令行可用 <code>mc-launcher java install 17</code> 下载 Temurin JRE</li>
+</ul>
+
+<h2>命令行</h2>
+<pre>mc-launcher list
+mc-launcher install 1.20.1
+mc-launcher launch 1.20.1
+mc-launcher verify 1.20.1
+mc-launcher auth offline Steve
+mc-launcher auth ms
+mc-launcher java list
+mc-launcher java install 17
+mc-launcher config show
+mc-launcher lang zh</pre>
+
+<h2>常见问题</h2>
+<p><strong>提示找不到 Java？</strong> 先执行 <code>mc-launcher java list</code>；没有的话执行 <code>mc-launcher java install 17</code>。</p>
+<p><strong>启动失败？</strong> 查看服务端控制台输出的启动命令行与 Java 报错。</p>
+<p><strong>打开 9876 是 404？</strong> 说明没找到前端目录，用 <code>-static</code> 指定 <code>frontend/</code> 的绝对路径。</p>
 </body>
 </html>
