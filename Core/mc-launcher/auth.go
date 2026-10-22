@@ -68,21 +68,41 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 	tokenBody.Set("client_id", clientId)
 	tokenBody.Set("device_code", dc.DeviceCode)
 	
-	var msToken string
 	interval := dc.Interval
 	if interval <= 0 {
 		interval = 5
 	}
-	for i := 0; i < 300; i++ {
+	deadline := time.Now().Add(15 * time.Minute)
+	var msToken string
+	for time.Now().Before(deadline) {
 		time.Sleep(time.Duration(interval) * time.Second)
-		b, code, _ = httpPostForm("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", tokenBody.Encode())
-		if code == 200 {
-			var tj map[string]any
-			json.Unmarshal(b, &tj)
-			if t, ok := tj["access_token"].(string); ok && t != "" {
-				msToken = t
-				break
+		b, _, _ = httpPostForm("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", tokenBody.Encode())
+		var tj map[string]any
+		if err := json.Unmarshal(b, &tj); err != nil {
+			continue
+		}
+		if t, ok := tj["access_token"].(string); ok && t != "" {
+			msToken = t
+			break
+		}
+		errCode, _ := tj["error"].(string)
+		switch errCode {
+		case "authorization_pending":
+			// 继续等待
+		case "slow_down":
+			interval += 5
+		case "":
+			return nil, fmt.Errorf("微软登录返回未知响应")
+		case "authorization_declined":
+			return nil, fmt.Errorf("用户拒绝了授权")
+		case "expired_token":
+			return nil, fmt.Errorf("设备码已过期，请重新登录")
+		default:
+			desc, _ := tj["error_description"].(string)
+			if desc == "" {
+				desc = errCode
 			}
+			return nil, fmt.Errorf("微软登录失败: %s", desc)
 		}
 	}
 	if msToken == "" {
@@ -112,18 +132,12 @@ func loginMicrosoft(verbose bool, clientId string) (*Account, error) {
 	json.Unmarshal(b, &sx)
 	xstsTok, _ := sx["Token"].(string)
 	
-	// 正确解析 DisplayClaims
-	uhs := ""
-	if displayClaims, ok := sx["DisplayClaims"]; ok {
-		if xui, ok := displayClaims.([]any); ok && len(xui) > 0 {
-			if m, ok := xui[0].(map[string]any); ok {
-				if u, ok := m["uhs"].(string); ok {
-					uhs = u
-				}
-			}
-		}
-	}
+	// DisplayClaims 实际是对象 {"xui":[{"uhs":"..."}]}，同时兼容数组形式
+	uhs := extractUHS(sx)
 	if xstsTok == "" || uhs == "" {
+		if xe, ok := sx["XErr"].(float64); ok {
+			return nil, fmt.Errorf("XSTS 认证失败: %s", xboxErrText(int(xe)))
+		}
 		return nil, fmt.Errorf("XSTS 认证失败")
 	}
 	if verbose {
@@ -223,4 +237,49 @@ func LoginMicrosoft(verbose bool, clientId string) (*Account, error) {
 
 func LoginAuthlib(server, user, pass string) (*Account, error) {
 	return loginAuthlib(server, user, pass)
+}
+
+// extractUHS 从 XSTS 响应中取出 uhs，兼容对象与数组两种 DisplayClaims 结构
+func extractUHS(resp map[string]any) string {
+	dc, ok := resp["DisplayClaims"]
+	if !ok {
+		return ""
+	}
+	// 形式一: {"xui":[{"uhs":"..."}]}
+	if m, ok := dc.(map[string]any); ok {
+		if xui, ok := m["xui"].([]any); ok && len(xui) > 0 {
+			if first, ok := xui[0].(map[string]any); ok {
+				if u, ok := first["uhs"].(string); ok {
+					return u
+				}
+			}
+		}
+	}
+	// 形式二: [{"uhs":"..."}]
+	if arr, ok := dc.([]any); ok && len(arr) > 0 {
+		if first, ok := arr[0].(map[string]any); ok {
+			if u, ok := first["uhs"].(string); ok {
+				return u
+			}
+		}
+	}
+	return ""
+}
+
+// xboxErrText 把 XSTS 错误码转成可读文本
+func xboxErrText(code int) string {
+	switch code {
+	case 2148916227:
+		return "该账号已被 Xbox 封禁"
+	case 2148916233:
+		return "该账号没有 Xbox 档案，请先在 xbox.com 创建"
+	case 2148916235:
+		return "该账号所在地区不支持 Xbox Live"
+	case 2148916236, 2148916237:
+		return "需要成人验证（地区限制）"
+	case 2148916238:
+		return "未成年账号需要家长同意并加入家庭组"
+	default:
+		return fmt.Sprintf("未知错误码 %d", code)
+	}
 }
