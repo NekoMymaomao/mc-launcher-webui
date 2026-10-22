@@ -104,6 +104,18 @@ echo pause
 
 echo ✅ 启动脚本已创建: launcher.bat
 
+REM 创建停止脚本
+(
+echo @echo off
+echo for /f "tokens=*" %%i in ('tasklist /fo csv ^| findstr /i "mc-launcher-server.exe"') do (
+echo     for /f "tokens=2 delims=," %%j in ("%%i") do taskkill /pid %%~nj /f
+echo )
+echo echo ✅ 已停止 MC Launcher 服务器
+echo pause
+) > "%TARGET_DIR%\stop.bat"
+
+echo ✅ 停止脚本已创建: stop.bat
+
 REM 创建 README
 (
 echo # MC Launcher WebUI - Windows 安装说明
@@ -120,6 +132,12 @@ echo cd %TARGET_DIR%
 echo .\launcher.bat
 echo ```
 echo.
+echo ### 停止服务器
+echo ```
+echo cd %TARGET_DIR%
+echo .\stop.bat
+echo ```
+echo.
 echo ### 访问 Web UI
 echo 启动服务器后，在浏览器打开:
 echo - http://localhost:9876
@@ -134,10 +152,14 @@ echo ```
 echo.
 echo ## 文件说明
 echo - launcher.bat - 一键启动脚本
+echo - stop.bat - 一键停止脚本
 echo - mc-launcher-server.exe - 后端服务
 echo - static/ - Web UI 静态文件
 echo - Core/mc-launcher/ - 核心源码
 echo - .github/workflows/ - CI/CD 配置
+echo.
+echo ## 支持的系统
+echo - ✅ Windows x64
 echo.
 echo ## 故障排查
 echo 如果启动失败:
@@ -158,6 +180,7 @@ echo ========================================
 echo.
 echo 📁 安装位置: %TARGET_DIR%
 echo 🚀 启动命令: cd %TARGET_DIR% ^&^& .\launcher.bat
+echo 🛑 停止命令: cd %TARGET_DIR% ^&^& .\stop.bat
 echo 🌐 访问地址: http://localhost:9876
 echo.
 echo ========================================

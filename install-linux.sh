@@ -1,7 +1,8 @@
 #!/bin/bash
 # MC Launcher WebUI - Linux 一键安装脚本
 # 作者: NekoMymaomao
-# 版本: 1.2.0
+# 版本: 2.0.0
+# 支持系统: Linux (x86_64, arm64)
 
 set -e
 
@@ -138,7 +139,7 @@ cd $TARGET_DIR
 ### 更新版本
 \`\`\`bash
 cd $TARGET_DIR
-git pull && go build -ldflags="-s -w" -o mc-launcher-server .
+git pull && cd backend && go mod tidy && go build -ldflags="-s -w" -o ../mc-launcher-server .
 \`\`\`
 
 ## 文件说明
@@ -148,6 +149,10 @@ git pull && go build -ldflags="-s -w" -o mc-launcher-server .
 - \`static/\` - Web UI 静态文件
 - \`Core/mc-launcher/\` - 核心源码
 - \`.github/workflows/\` - CI/CD 配置
+
+## 支持的系统
+- ✅ Linux x86_64 (amd64)
+- ✅ Linux ARM64 (aarch64)
 
 ## 故障排查
 如果启动失败:
