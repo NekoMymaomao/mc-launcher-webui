@@ -4,4 +4,4 @@ go 1.22
 
 require github.com/NekoMymaomao/mc-launcher/core v0.0.0
 
-replace github.com/NekoMymaomao/mc-launcher/core => ../Core/mc-launcher-lib
+replace github.com/NekoMymaomao/mc-launcher/core => ../Core/mc-launcher

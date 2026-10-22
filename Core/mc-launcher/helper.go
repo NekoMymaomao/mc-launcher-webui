@@ -1,4 +1,4 @@
-package main
+package core
 
 func okResp(data any) Response {
 	return Response{Ok: true, Data: data}

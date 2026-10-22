@@ -1,29 +1,59 @@
 name: Build
 
-on: [push, workflow_dispatch]
-
-permissions:
-  contents: write
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version: '1.22'
-    
-    - name: Build Core
-      run: |
-        cd Core/mc-launcher
-        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mc-launcher-linux-amd64 .
-        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o mc-launcher-linux-arm64 .
-        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o mc-launcher-windows-amd64.exe .
-    
-    - name: Upload Core
-      uses: actions/upload-artifact@v4
-      with:
-        name: core-dist
-        path: Core/mc-launcher/mc-launcher-*
-        retention-days: 30
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Compile
+        run: |
+          set -eux
+          mkdir -p dist
+
+          cd Core/mc-launcher
+          go vet ./... || true
+          go build ./...
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-linux-amd64"      ./cmd/mc-launcher
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-linux-arm64"      ./cmd/mc-launcher
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-windows-amd64.exe" ./cmd/mc-launcher
+
+          cd "$GITHUB_WORKSPACE/backend"
+          go build ./...
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-server-linux-amd64"      .
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-server-linux-arm64"      .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/mc-launcher-server-windows-amd64.exe" .
+
+      - name: Package
+        run: |
+          set -eux
+          cd "$GITHUB_WORKSPACE"
+          for os in linux-amd64 linux-arm64 windows-amd64; do
+            p="pkg-$os"
+            rm -rf "$p"; mkdir -p "$p"
+            cp -r frontend "$p/frontend"
+            cp dist/mc-launcher-server-$os* "$p/"
+            cp dist/mc-launcher-$os* "$p/" 2>/dev/null || true
+            if [ "${os%%-*}" = "windows" ]; then
+              (cd "$p" && zip -qr "../dist/mc-launcher-$os.zip" .)
+            else
+              tar -czf "dist/mc-launcher-$os.tar.gz" -C "$p" .
+            fi
+            rm -rf "$p"
+          done
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mc-launcher-dist
+          path: dist/*
+          retention-days: 30

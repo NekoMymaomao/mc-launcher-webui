@@ -14,329 +14,303 @@ import (
 )
 
 func main() {
-	// 初始化核心
-	core.Init()
-	
-	addr := ":9876"
-	if v := os.Getenv("MC_LAUNCHER_ADDR"); v != "" {
-		addr = v
+	if err := core.Init(); err != nil {
+		log.Fatalf("初始化失败: %v", err)
 	}
-	
-	// 准备静态文件
-	staticDir := filepath.Join(core.GetBaseDir(), "static")
-	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
-		// 尝试从项目目录复制
-		projectDir, _ := os.Getwd()
-		frontendDir := filepath.Join(projectDir, "frontend")
-		if info, err := os.Stat(frontendDir); err == nil && info.IsDir() {
-			os.MkdirAll(staticDir, 0755)
-			// 简单复制（实际应该用更健壮的方式）
-			fmt.Println("警告: 未找到静态文件目录，请运行安装脚本")
-		}
+
+	addr := os.Getenv("MC_LAUNCHER_ADDR")
+	if addr == "" {
+		addr = ":9876"
 	}
-	
+
+	staticDir := findStaticDir()
 	mux := http.NewServeMux()
-	
-	// API 路由
-	mux.HandleFunc("/api/ping", handlePing)
-	mux.HandleFunc("/api/info", handleInfo)
-	mux.HandleFunc("/api/versions", handleVersions)
-	mux.HandleFunc("/api/versions/install", handleInstallVersion)
-	mux.HandleFunc("/api/versions/remove", handleRemoveVersion)
-	mux.HandleFunc("/api/launch", handleLaunch)
-	mux.HandleFunc("/api/accounts", handleAccounts)
-	mux.HandleFunc("/api/accounts/offline", handleOfflineAuth)
-	mux.HandleFunc("/api/accounts/microsoft", handleMicrosoftAuth)
-	mux.HandleFunc("/api/java", handleJava)
-	mux.HandleFunc("/api/java/install", handleInstallJava)
-	mux.HandleFunc("/api/java/set", handleSetJava)
-	mux.HandleFunc("/api/modrinth/search", handleModrinthSearch)
-	mux.HandleFunc("/api/modrinth/info/", handleModrinthInfo)
-	mux.HandleFunc("/api/config", handleConfig)
-	
-	// 静态文件服务
-	if _, err := os.Stat(staticDir); err == nil {
-		mux.Handle("/", http.FileServer(http.Dir(staticDir)))
+
+	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, core.Response{Ok: true, Data: map[string]any{
+			"version": "2.0.0",
+			"baseDir": core.GetBaseDir(),
+		}})
+	})
+
+	mux.HandleFunc("/api/versions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true, Data: core.ListVersions()})
+	})
+
+	mux.HandleFunc("/api/versions/install", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Version string `json:"version"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Version == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "version 不能为空"})
+			return
+		}
+		resp, err := core.InstallVersion(body.Version, "", nil)
+		if err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, resp)
+	})
+
+	mux.HandleFunc("/api/versions/remove", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Version string `json:"version"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if err := core.RemoveVersion(body.Version); err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true})
+	})
+
+	mux.HandleFunc("/api/versions/verify", func(w http.ResponseWriter, r *http.Request) {
+		v := r.URL.Query().Get("version")
+		if v == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "version 不能为空"})
+			return
+		}
+		ok, msg := core.VerifyVersion(v)
+		writeJSON(w, 200, core.Response{Ok: ok, Error: msg})
+	})
+
+	mux.HandleFunc("/api/launch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Version  string `json:"version"`
+			Username string `json:"username"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Version == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "version 不能为空"})
+			return
+		}
+		if body.Username == "" {
+			body.Username = "Player"
+		}
+		resp, err := core.LaunchVersion(body.Version, body.Username)
+		if err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, resp)
+	})
+
+	mux.HandleFunc("/api/accounts", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, 200, core.Response{Ok: true, Data: map[string]any{
+				"accounts": core.ListAccounts(),
+				"current":  core.CurrentAccount(),
+			}})
+		case http.MethodDelete:
+			uuid := r.URL.Query().Get("uuid")
+			if uuid == "" {
+				writeJSON(w, 400, core.Response{Ok: false, Error: "uuid 不能为空"})
+				return
+			}
+			ok := core.RemoveAccount(uuid)
+			writeJSON(w, 200, core.Response{Ok: ok})
+		case http.MethodPut:
+			var body struct {
+				UUID string `json:"uuid"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			ok := core.SelectAccount(body.UUID)
+			writeJSON(w, 200, core.Response{Ok: ok})
+		default:
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+		}
+	})
+
+	mux.HandleFunc("/api/accounts/offline", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Name == "" {
+			body.Name = "Player"
+		}
+		acc := core.LoginOffline(body.Name)
+		core.UpsertAccount(*acc)
+		writeJSON(w, 200, core.Response{Ok: true, Data: acc})
+	})
+
+	mux.HandleFunc("/api/accounts/microsoft", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		acc, err := core.LoginMicrosoft(false, "")
+		if err != nil {
+			writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		core.UpsertAccount(*acc)
+		writeJSON(w, 200, core.Response{Ok: true, Data: acc})
+	})
+
+	mux.HandleFunc("/api/java", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true, Data: core.ScanJava()})
+	})
+
+	mux.HandleFunc("/api/java/install", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Major int `json:"major"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Major == 0 {
+			body.Major = 17
+		}
+		p, err := core.InstallJava(body.Major)
+		if err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true, Data: map[string]string{"path": p}})
+	})
+
+	mux.HandleFunc("/api/java/set", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+			return
+		}
+		var body struct {
+			Path string `json:"path"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Path == "" {
+			writeJSON(w, 400, core.Response{Ok: false, Error: "path 不能为空"})
+			return
+		}
+		if err := core.SetJavaPath(body.Path); err != nil {
+			writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, 200, core.Response{Ok: true})
+	})
+
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, 200, core.Response{Ok: true, Data: core.GetSettings()})
+		case http.MethodPut:
+			var s core.Settings
+			if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
+				writeJSON(w, 400, core.Response{Ok: false, Error: err.Error()})
+				return
+			}
+			if err := core.SaveSettings(&s); err != nil {
+				writeJSON(w, 500, core.Response{Ok: false, Error: err.Error()})
+				return
+			}
+			writeJSON(w, 200, core.Response{Ok: true, Data: core.GetSettings()})
+		default:
+			writeJSON(w, 405, core.Response{Ok: false, Error: "method not allowed"})
+		}
+	})
+
+	mux.HandleFunc("/api/modrinth/search", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		ptype := r.URL.Query().Get("type")
+		off, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		writeJSON(w, 200, core.ModrinthSearch(q, ptype, off))
+	})
+
+	if staticDir != "" {
+		fs := http.FileServer(http.Dir(staticDir))
+		mux.Handle("/", fs)
 	} else {
-		// 默认返回 index.html 或直接提供 API
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"status": "ok",
-				"message": "MC Launcher WebUI Server",
-				"version": "2.0.0-dev",
-			})
+			writeJSON(w, 200, core.Response{Ok: true, Data: map[string]string{
+				"message": "MC Launcher WebUI API",
+				"hint":    "未找到 frontend 目录，仅提供 API",
+			}})
 		})
 	}
-	
-	fmt.Printf("MC Launcher WebUI Server\n")
-	fmt.Printf("Address: %s\n", addr)
-	fmt.Printf("Base Dir: %s\n", core.GetBaseDir())
-	fmt.Println("================================")
-	
-	log.Fatal(http.ListenAndServe(addr, mux))
+
+	fmt.Printf("MC Launcher 服务已启动: http://localhost%s\n", addr)
+	fmt.Printf("数据目录: %s\n", core.GetBaseDir())
+	if staticDir != "" {
+		fmt.Printf("前端目录: %s\n", staticDir)
+	}
+	log.Fatal(http.ListenAndServe(addr, logRequests(mux)))
 }
 
-// ============ 响应助手 ============
-
-func writeJSON(w http.ResponseWriter, status int, data any) {
+func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
 }
 
-func writeResponse(w http.ResponseWriter, resp *core.Response) {
-	status := http.StatusOK
-	if !resp.Ok {
-		status = http.StatusBadRequest
-	}
-	writeJSON(w, status, resp)
-}
+// findStaticDir 按优先级查找前端静态目录
+func findStaticDir() string {
+	candidates := []string{}
 
-func okResp(data any) *core.Response {
-	return &core.Response{Ok: true, Data: data}
-}
+	if v := os.Getenv("MC_LAUNCHER_STATIC"); v != "" {
+		candidates = append(candidates, v)
+	}
 
-func errResp(msg string) *core.Response {
-	return &core.Response{Ok: false, Error: msg}
-}
+	if exe, err := os.Executable(); err == nil {
+		d := filepath.Dir(exe)
+		candidates = append(candidates, filepath.Join(d, "static"), filepath.Join(d, "..", "frontend"))
+	}
 
-// ============ API Handlers ============
+	// 工作目录附近的 frontend
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(wd, "frontend"),
+			filepath.Join(wd, "..", "frontend"),
+			filepath.Join(wd, "static"),
+		)
+	}
 
-func handlePing(w http.ResponseWriter, r *http.Request) {
-	writeResponse(w, okResp(map[string]string{"status": "ok", "version": "2.0.0"}))
-}
+	candidates = append(candidates, filepath.Join(core.GetBaseDir(), "static"))
 
-func handleInfo(w http.ResponseWriter, r *http.Request) {
-	writeResponse(w, okResp(map[string]any{
-		"version":  "2.0.0",
-		"baseDir":  core.GetBaseDir(),
-		"accounts": len(core.ListAccounts()),
-	}))
-}
-
-func handleVersions(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		writeResponse(w, okResp(core.ListVersions()))
-	default:
-		writeResponse(w, errResp("method not allowed"))
-	}
-}
-
-func handleInstallVersion(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Version string `json:"version"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	if req.Version == "" {
-		writeResponse(w, errResp("version required"))
-		return
-	}
-	
-	resp := core.InstallVersion(req.Version, "", nil)
-	writeResponse(w, resp)
-}
-
-func handleRemoveVersion(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Version string `json:"version"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	err := core.RemoveVersion(req.Version)
-	if err != nil {
-		writeResponse(w, errResp(err.Error()))
-		return
-	}
-	writeResponse(w, okResp(nil))
-}
-
-func handleLaunch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Version  string `json:"version"`
-		Username string `json:"username"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	if req.Version == "" {
-		writeResponse(w, errResp("version required"))
-		return
-	}
-	if req.Username == "" {
-		req.Username = "Player"
-	}
-	
-	resp := core.LaunchVersion(req.Version, req.Username)
-	writeResponse(w, resp)
-}
-
-func handleAccounts(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		writeResponse(w, okResp(core.ListAccounts()))
-	case "DELETE":
-		core.AccountRemove("")
-		writeResponse(w, okResp(nil))
-	default:
-		writeResponse(w, errResp("method not allowed"))
-	}
-}
-
-func handleOfflineAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Name string `json:"name"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	if req.Name == "" {
-		req.Name = "Player"
-	}
-	
-	acc := core.LoginOffline(req.Name)
-	core.AccountUpsert(*acc)
-	writeResponse(w, okResp(acc))
-}
-
-func handleMicrosoftAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	acc, err := core.LoginMicrosoft(true, "")
-	if err != nil {
-		writeResponse(w, errResp(err.Error()))
-		return
-	}
-	core.AccountUpsert(*acc)
-	writeResponse(w, okResp(acc))
-}
-
-func handleJava(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		writeResponse(w, okResp(core.ScanJava()))
-	default:
-		writeResponse(w, errResp("method not allowed"))
-	}
-}
-
-func handleInstallJava(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Major int `json:"major"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	if req.Major == 0 {
-		req.Major = 17
-	}
-	
-	path, err := core.InstallJava(req.Major)
-	if err != nil {
-		writeResponse(w, errResp(err.Error()))
-		return
-	}
-	writeResponse(w, okResp(map[string]string{"path": path}))
-}
-
-func handleSetJava(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "PUT" {
-		writeResponse(w, errResp("method not allowed"))
-		return
-	}
-	
-	var req struct {
-		Path string `json:"path"`
-	}
-	json.NewDecoder(r.Body).Decode(&req)
-	
-	if req.Path == "" {
-		writeResponse(w, errResp("path required"))
-		return
-	}
-	
-	core.SetJavaPath(req.Path)
-	writeResponse(w, okResp(nil))
-}
-
-func handleModrinthSearch(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
-	projectType := r.URL.Query().Get("type")
-	offsetStr := r.URL.Query().Get("offset")
-	
-	offset := 0
-	if n, err := strconv.Atoi(offsetStr); err == nil {
-		offset = n
-	}
-	
-	resp := core.ModrinthSearch(query, projectType, offset)
-	writeResponse(w, resp)
-}
-
-func handleModrinthInfo(w http.ResponseWriter, r *http.Request) {
-	slug := strings.TrimPrefix(r.URL.Path, "/api/modrinth/info/")
-	if slug == "" {
-		writeResponse(w, errResp("slug required"))
-		return
-	}
-	
-	resp := core.ModrinthProjectInfo(slug)
-	writeResponse(w, resp)
-}
-
-func handleConfig(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		writeResponse(w, okResp(core.GetSettings()))
-	case "PUT":
-		var updated core.Settings
-		json.NewDecoder(r.Body).Decode(&updated)
-		c := core.GetSettings()
-		if updated.MaxMemory > 0 {
-			c.MaxMemory = updated.MaxMemory
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+				return c
+			}
 		}
-		if updated.MinMemory > 0 {
-			c.MinMemory = updated.MinMemory
-		}
-		if updated.Threads > 0 {
-			c.Threads = updated.Threads
-		}
-		if updated.Width > 0 {
-			c.Width = updated.Width
-		}
-		if updated.Height > 0 {
-			c.Height = updated.Height
-		}
-		core.SaveSettings(c)
-		writeResponse(w, okResp(c))
-	default:
-		writeResponse(w, errResp("method not allowed"))
 	}
+	return ""
+}
+
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			log.Printf("%s %s", r.Method, r.URL.Path)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
