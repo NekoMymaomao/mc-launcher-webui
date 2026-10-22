@@ -10,34 +10,22 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-go@v5
       with:
         go-version: '1.22'
     
-    - name: Build Core Library
+    - name: Build Core
       run: |
-        cd Core/mc-launcher-lib
-        go mod tidy
-    
-    - name: Build CLI
-      run: |
-        cd Core/mc-launcher-cli
-        go mod tidy
-        CGO_ENABLED=0 go build -ldflags="-s -w" -o mc-launcher-linux-amd64 .
+        cd Core/mc-launcher
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mc-launcher-linux-amd64 .
         CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o mc-launcher-linux-arm64 .
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o mc-launcher-windows-amd64.exe .
     
-    - name: Build Backend
-      run: |
-        cd backend
-        go mod tidy
-        CGO_ENABLED=0 go build -ldflags="-s -w" -o mc-launcher-server .
-    
-    - name: Upload Artifacts
+    - name: Upload Core
       uses: actions/upload-artifact@v4
       with:
-        name: mc-launcher-dist
-        path: |
-          Core/mc-launcher-cli/mc-launcher-*
-          backend/mc-launcher-server
+        name: core-dist
+        path: Core/mc-launcher/mc-launcher-*
         retention-days: 30
