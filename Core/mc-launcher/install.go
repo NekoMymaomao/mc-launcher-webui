@@ -39,10 +39,12 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 
 	instDir := getInstalledDir(versionId)
 	libDir := getLibDir(versionId)
+	assetsDir := filepath.Join(baseDir, "assets")
 	ensureDir(instDir)
 	ensureDir(libDir)
-	ensureDir(filepath.Join(baseDir, "assets", "indexes"))
-	ensureDir(filepath.Join(baseDir, "assets", "objects"))
+	ensureDir(filepath.Join(instDir, "natives"))
+	ensureDir(filepath.Join(assetsDir, "indexes"))
+	ensureDir(filepath.Join(assetsDir, "objects"))
 
 	// 保存版本 manifest（优先写入原始 JSON，保证可被其他启动器识别）
 	manifestText := detail.RawJSON
@@ -50,100 +52,205 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 		b, _ := json.MarshalIndent(detail, "", "  ")
 		manifestText = string(b)
 	}
-	writeAll(filepath.Join(instDir, versionId+".json"), manifestText)
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	downloaded := 0
-	totalTasks := 0
-
-	totalTasks++
-	totalTasks++
-	for _, lib := range detail.Libraries {
-		if lib.ResolvedURL != "" {
-			totalTasks++
-		}
-		if lib.NativeURL != "" {
-			totalTasks++
-		}
+	if err := writeAll(filepath.Join(instDir, versionId+".json"), manifestText); err != nil {
+		return &Response{Ok: false, Error: "写入版本文件失败: " + err.Error()}, nil
 	}
 
-	updateProgress := func(msg string) {
+	var mu sync.Mutex
+	done, total := 0, 1
+	var errs []string
+	report := func(msg string) {
 		mu.Lock()
-		d := downloaded
+		d, t := done, total
 		mu.Unlock()
 		if cb != "" && sender != nil {
-			sender(Progress{ID: cb, Done: int64(d), Total: int64(totalTasks), Msg: msg})
+			sender(Progress{ID: cb, Done: int64(d), Total: int64(t), Msg: msg})
 		}
 	}
+	mark := func() {
+		mu.Lock()
+		done++
+		mu.Unlock()
+	}
+	recordErr := func(msg string) {
+		mu.Lock()
+		errs = append(errs, msg)
+		mu.Unlock()
+	}
 
-	// 1. 下载 client jar
+	threads := cfg.Threads
+	if threads <= 0 {
+		threads = 8
+	}
+	sem := make(chan struct{}, threads)
+	run := func(fn func()) {
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem }()
+			fn()
+		}()
+	}
+
+	// ---------- 阶段 1: client jar + libraries + natives ----------
+	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
+	run(func() {
 		defer wg.Done()
 		dest := filepath.Join(instDir, versionId+".jar")
-		if err := downloadFile(detail.Client.URL, dest, detail.Client.SHA1, nil); err != nil {
+		if err := downloadFile(detail.Client.URL, dest, detail.Client.SHA1); err != nil {
+			recordErr("客户端: " + err.Error())
 			logError("下载客户端失败: %v", err)
 		}
-		mu.Lock(); downloaded++; mu.Unlock()
-		updateProgress("下载客户端...")
-	}()
+		mark()
+		report("下载客户端...")
+	})
 
-	// 2. 下载 libraries
-	sem := make(chan struct{}, cfg.Threads)
 	for _, lib := range detail.Libraries {
-		if lib.ResolvedURL != "" {
-			sem <- struct{}{}
+		l := lib
+		if l.ResolvedURL != "" {
 			wg.Add(1)
-			go func(l Library) {
-				defer func() { <-sem; wg.Done() }()
+			run(func() {
+				defer wg.Done()
 				dest := filepath.Join(libDir, l.ResolvedPath)
-				if err := downloadFile(l.ResolvedURL, dest, l.Downloads.Artifact.SHA1, nil); err != nil {
+				sha := ""
+				if l.Downloads != nil {
+					sha = l.Downloads.Artifact.SHA1
+				}
+				if err := downloadFile(l.ResolvedURL, dest, sha); err != nil {
+					recordErr(l.Name + ": " + err.Error())
 					logError("下载库失败 %s: %v", l.Name, err)
 				}
-				mu.Lock(); downloaded++; mu.Unlock()
-				updateProgress("下载库: " + l.Name)
-			}(lib)
+				mark()
+				report("下载库: " + l.Name)
+			})
 		}
-		if lib.NativeURL != "" {
-			sem <- struct{}{}
+		if l.NativeURL != "" {
 			wg.Add(1)
-			go func(l Library) {
-				defer func() { <-sem; wg.Done() }()
+			run(func() {
+				defer wg.Done()
 				dest := filepath.Join(libDir, l.NativePath)
-				if err := downloadFile(l.NativeURL, dest, "", nil); err != nil {
+				sha := ""
+				if l.Downloads != nil {
+					for _, a := range l.Downloads.Classifiers {
+						if a.Path == l.NativePath {
+							sha = a.SHA1
+							break
+						}
+					}
+				}
+				if err := downloadFile(l.NativeURL, dest, sha); err != nil {
+					recordErr("natives " + l.Name + ": " + err.Error())
 					logError("下载 natives 失败 %s: %v", l.Name, err)
 				} else if l.Extract != nil {
-					nativesDir := filepath.Join(instDir, "natives")
 					exclude := []string{"META-INF/"}
-					if l.Extract.Exclude != nil {
+					if len(l.Extract.Exclude) > 0 {
 						exclude = l.Extract.Exclude
 					}
-					unzip(dest, nativesDir, exclude)
+					if err := unzip(dest, filepath.Join(instDir, "natives"), exclude); err != nil {
+						recordErr("解压 natives " + l.Name + ": " + err.Error())
+					}
 				}
-				mu.Lock(); downloaded++; mu.Unlock()
-				updateProgress("下载 natives: " + l.Name)
-			}(lib)
+				mark()
+				report("下载 natives: " + l.Name)
+			})
+		}
+	}
+	wg.Wait()
+
+	// ---------- 阶段 2: asset index（必须在 objects 之前完成）----------
+	if detail.AssetIndex.URL != "" && detail.AssetIndexID != "" {
+		indexPath := filepath.Join(assetsDir, "indexes", detail.AssetIndexID+".json")
+		if err := downloadFile(detail.AssetIndex.URL, indexPath, detail.AssetIndex.SHA1); err != nil {
+			recordErr("资源索引: " + err.Error())
+			logError("下载 asset index 失败: %v", err)
+		} else {
+			report("下载资源索引...")
+		}
+
+		// ---------- 阶段 3: asset objects ----------
+		raw, rerr := os.ReadFile(indexPath)
+		if rerr != nil {
+			recordErr("读取资源索引: " + rerr.Error())
+		} else {
+			var idx struct {
+				Objects map[string]struct {
+					Hash string `json:"hash"`
+					Size int64  `json:"size"`
+				} `json:"objects"`
+			}
+			if jerr := json.Unmarshal(raw, &idx); jerr != nil {
+				recordErr("解析资源索引: " + jerr.Error())
+			} else {
+				mu.Lock()
+				total += len(idx.Objects)
+				mu.Unlock()
+
+				var awg sync.WaitGroup
+				for hash := range idx.Objects {
+					h := hash
+					if len(h) < 4 {
+						mark()
+						continue
+					}
+					awg.Add(1)
+					run(func() {
+						defer awg.Done()
+						sub := filepath.Join(assetsDir, "objects", h[:2])
+						dest := filepath.Join(sub, h)
+						url := "https://resources.download.minecraft.net/" + h[:2] + "/" + h
+						if err := downloadFile(url, dest, h); err != nil {
+							recordErr("资源 " + h[:8] + ": " + err.Error())
+						}
+						mark()
+					})
+				}
+				awg.Wait()
+				report("下载资源完成")
+			}
 		}
 	}
 
-	// 3. 下载 asset index
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if detail.AssetIndex.URL != "" {
-			dest := filepath.Join(baseDir, "assets", "indexes", detail.AssetIndexID+".json")
-			if err := downloadFile(detail.AssetIndex.URL, dest, detail.AssetIndex.SHA1, nil); err != nil {
-				logError("下载 asset index 失败: %v", err)
-			}
+	updateProgressFinal := func() {
+		mu.Lock()
+		d, t := done, total
+		n := len(errs)
+		var first string
+		if n > 0 {
+			first = errs[0]
 		}
-		mu.Lock(); downloaded++; mu.Unlock()
-		updateProgress("下载资源索引...")
-	}()
+		mu.Unlock()
+		if cb != "" && sender != nil {
+			sender(Progress{ID: cb, Done: int64(d), Total: int64(t), Msg: "安装完成"})
+		}
+		if n > 0 {
+			logError("安装完成，但有 %d 个文件失败（首个：%s）", n, first)
+		}
+	}
+	updateProgressFinal()
 
-	wg.Wait()
-	updateProgress("安装完成!")
+	if len(errs) > 0 {
+		return &Response{Ok: false, Error: "安装完成但部分文件失败（" + itoaInt(len(errs)) + " 个）: " + errs[0]}, nil
+	}
 	return &Response{Ok: true, Data: map[string]string{"id": versionId, "path": instDir}}, nil
+}
+
+func itoaInt(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		b = append([]byte{'-'}, b...)
+	}
+	return string(b)
 }
 
 func listVersions() []string {

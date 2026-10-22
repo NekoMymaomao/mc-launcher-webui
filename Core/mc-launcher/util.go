@@ -78,7 +78,7 @@ func mirrorUrl(url, source string) string {
 }
 
 // downloadFile 下载文件并验证 SHA1
-func downloadFile(url, dest, expectedSHA1 string, headers map[string]string) error {
+func downloadFile(url, dest, expectedSHA1 string) error {
 	// 检查是否已存在且校验和匹配
 	if expectedSHA1 != "" && fileExists(dest) {
 		if sha, err := sha1OfFile(dest); err == nil && sha == expectedSHA1 {

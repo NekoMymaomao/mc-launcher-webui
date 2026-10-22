@@ -164,7 +164,7 @@ func installJava(major int) (string, error) {
 	url := "https://api.adoptium.net/v3/binary/latest/" + itoa(major) + "/ga/" +
 		runtimeGOOS + "/" + arch + "/jre/hotspot/normal/eclipse"
 	dest := filepath.Join(baseDir, "java", archive)
-	if err := downloadFile(mirrorUrl(url, cfg.DownloadSource), dest, "", nil); err != nil {
+	if err := downloadFile(mirrorUrl(url, cfg.DownloadSource), dest, ""); err != nil {
 		return "", fmt.Errorf("下载 Java 失败: %v", err)
 	}
 	target := filepath.Join(baseDir, "java", "temurin-"+itoa(major))
