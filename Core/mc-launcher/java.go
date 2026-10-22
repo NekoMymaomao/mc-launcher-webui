@@ -178,7 +178,7 @@ func installJava(major int) (string, error) {
 		cfg.save()
 		return found, nil
 	}
-	return "", Err("未找到 Java")
+	return "", fmt.Errorf("未找到 Java")
 }
 
 func findJavaBinary(dir string) string {
