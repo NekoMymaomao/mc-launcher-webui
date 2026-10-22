@@ -1,6 +1,5 @@
 package main
 
-import "encoding/json"
 
 type Request struct {
 	Cmd  string         `json:"cmd"`
@@ -153,6 +152,7 @@ type VersionDetail struct {
 	JavaMajor    int       `json:"javaVersion"`
 	LogArgument  string    `json:"loggingClientArgument"`
 	LogFile      Artifact  `json:"-"`
+	RawJSON      string    `json:"-"`
 }
 
 type VersionEntry struct {

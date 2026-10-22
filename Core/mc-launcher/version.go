@@ -153,6 +153,7 @@ func parseVersionJSON(raw string) (*VersionDetail, error) {
 		parseArgs(args.JVM, &v.JVMArgs)
 	}
 
+	v.RawJSON = raw
 	v.Valid = true
 	return &v, nil
 }

@@ -44,9 +44,13 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 	ensureDir(filepath.Join(baseDir, "assets", "indexes"))
 	ensureDir(filepath.Join(baseDir, "assets", "objects"))
 
-	// 保存版本 manifest
-	versionJson, _ := json.MarshalIndent(detail, "", "  ")
-	writeAll(filepath.Join(instDir, versionId+".json"), string(versionJson))
+	// 保存版本 manifest（优先写入原始 JSON，保证可被其他启动器识别）
+	manifestText := detail.RawJSON
+	if manifestText == "" {
+		b, _ := json.MarshalIndent(detail, "", "  ")
+		manifestText = string(b)
+	}
+	writeAll(filepath.Join(instDir, versionId+".json"), manifestText)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex

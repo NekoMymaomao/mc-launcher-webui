@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,8 +19,11 @@ func launchVersion(versionId, username string) (*Response, error) {
 		acc := loginOffline(username)
 		accessToken = acc.AccessToken
 		uuid = acc.UUID
-		userType = "offline"
+		userType = "legacy"
 	}
+
+	// MC 只认 legacy / msa 两种 userType
+	userType = mcUserType(userType)
 
 	detail, err := fetchVersionDetail(versionId, cfg.DownloadSource)
 	if err != nil {
@@ -78,14 +80,19 @@ func launchVersion(versionId, username string) (*Response, error) {
 		}
 	}
 
-	allArgs = append(allArgs, "--username", username)
-	allArgs = append(allArgs, "--version", versionId)
-	allArgs = append(allArgs, "--gameDir", instDir)
-	allArgs = append(allArgs, "--assetsDir", filepath.Join(baseDir, "assets"))
-	allArgs = append(allArgs, "--assetIndex", detail.AssetIndexID)
-	allArgs = append(allArgs, "--uuid", uuid)
-	allArgs = append(allArgs, "--accessToken", accessToken)
-	allArgs = append(allArgs, "--userType", userType)
+	// 仅当版本 JSON 未提供任何游戏参数时才补全，避免参数重复
+	if len(detail.GameArgs) == 0 && detail.LegacyArgs == "" {
+		allArgs = append(allArgs,
+			"--username", username,
+			"--version", versionId,
+			"--gameDir", instDir,
+			"--assetsDir", filepath.Join(baseDir, "assets"),
+			"--assetIndex", detail.AssetIndexID,
+			"--uuid", uuid,
+			"--accessToken", accessToken,
+			"--userType", userType,
+		)
+	}
 	if detail.LogArgument != "" {
 		allArgs = append(allArgs, detail.LogArgument)
 	}
@@ -125,4 +132,16 @@ func substituteArgs(arg, versionId, username, uuid, token, gameDir, nativesDir, 
 
 func LaunchVersion(versionId, username string) (*Response, error) {
 	return launchVersion(versionId, username)
+}
+
+// mcUserType 把内部账号类型映射为 Minecraft 认识的 userType
+func mcUserType(t string) string {
+	switch t {
+	case "microsoft", "msa":
+		return "msa"
+	case "":
+		return "legacy"
+	default:
+		return "legacy"
+	}
 }
