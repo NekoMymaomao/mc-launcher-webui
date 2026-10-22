@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,11 +15,26 @@ import (
 )
 
 func main() {
+	addrFlag := flag.String("addr", "", "监听地址，例如 0.0.0.0:9876（默认 :9876）")
+	dirFlag := flag.String("dir", "", "数据目录")
+	staticFlag := flag.String("static", "", "前端静态目录")
+	flag.Parse()
+
+	if *dirFlag != "" {
+		os.Setenv("MC_LAUNCHER_DIR", *dirFlag)
+	}
+	if *staticFlag != "" {
+		os.Setenv("MC_LAUNCHER_STATIC", *staticFlag)
+	}
+
 	if err := core.Init(); err != nil {
 		log.Fatalf("初始化失败: %v", err)
 	}
 
-	addr := os.Getenv("MC_LAUNCHER_ADDR")
+	addr := *addrFlag
+	if addr == "" {
+		addr = os.Getenv("MC_LAUNCHER_ADDR")
+	}
 	if addr == "" {
 		addr = ":9876"
 	}

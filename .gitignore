@@ -1,23 +1,18 @@
-# Android
-android/app/build/
-android/*.keystore
-android/*.jks
-!android/*.keystore.example
+# 构建产物
+dist/
+*.exe
+mc-launcher-server
+mc-launcher-linux-*
+mc-launcher-windows-*
 
-# Gradle
-.gradle/
-build/
-!**/build/
+# Go
+/vendor/
 
-# Android Studio
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# OS
+# 操作系统
 .DS_Store
 Thumbs.db
 
-# Local config
+# 本地配置
 local.properties
+settings.json
+accounts.json
