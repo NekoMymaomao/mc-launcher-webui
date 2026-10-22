@@ -88,9 +88,25 @@ func parseVersionJSON(raw string) (*VersionDetail, error) {
 		json.Unmarshal(raw, &v.LegacyArgs)
 	}
 	if raw, ok := j["logging"]; ok {
-		var lg struct{ Client struct{ Argument string } }
+		var lg struct {
+			Client struct {
+				Argument string `json:"argument"`
+				File     struct {
+					ID   string `json:"id"`
+					URL  string `json:"url"`
+					SHA1 string `json:"sha1"`
+					Size int64  `json:"size"`
+				} `json:"file"`
+			} `json:"client"`
+		}
 		json.Unmarshal(raw, &lg)
 		v.LogArgument = lg.Client.Argument
+		v.LogFile = Artifact{
+			Path: lg.Client.File.ID,
+			URL:  lg.Client.File.URL,
+			SHA1: lg.Client.File.SHA1,
+			Size: lg.Client.File.Size,
+		}
 	}
 
 	// libraries
@@ -127,7 +143,10 @@ func parseVersionJSON(raw string) (*VersionDetail, error) {
 				for k, a := range dl.Classifiers {
 					if strings.Contains(k, plat) && a.URL != "" {
 						lib.NativeURL = mirrorUrl(a.URL, cfg.DownloadSource)
-						lib.NativePath = mavenPath(name + "-" + k)
+						lib.NativePath = a.Path
+						if lib.NativePath == "" {
+							lib.NativePath = mavenPathWithClassifier(name, k)
+						}
 						lib.IsNative = true
 						break
 					}
@@ -200,6 +219,19 @@ func mavenPath(name string) string {
 	return group + "/" + art + "/" + ver + "/" + art + "-" + ver + cls + ".jar"
 }
 
+// mavenPathWithClassifier 生成带 classifier 的 maven 路径
+// name 形如 group:artifact:version[:classifier]
+func mavenPathWithClassifier(name, classifier string) string {
+	parts := strings.SplitN(name, ":", 4)
+	if len(parts) < 3 {
+		return name + ".jar"
+	}
+	group := strings.ReplaceAll(parts[0], ".", "/")
+	art := parts[1]
+	ver := parts[2]
+	return group + "/" + art + "/" + ver + "/" + art + "-" + ver + "-" + classifier + ".jar"
+}
+
 func platformOS() string {
 	switch runtimeGOOS {
 	case "windows":
@@ -231,11 +263,19 @@ func (r Rule) matches() bool {
 		}
 	}
 	for k, v := range r.Features {
+		have := false
 		switch k {
-		case "is_demo_user":
-			if v {
-				return false
-			}
+		case "has_custom_resolution":
+			// 启动器支持通过 --width/--height 指定窗口尺寸
+			have = true
+		case "is_demo_user", "has_quick_plays_support", "is_quick_play_singleplayer",
+			"is_quick_play_multiplayer", "is_quick_play_realms":
+			have = false
+		default:
+			have = false
+		}
+		if v != have {
+			return false
 		}
 	}
 	return true

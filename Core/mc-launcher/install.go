@@ -57,7 +57,20 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 	}
 
 	var mu sync.Mutex
-	done, total := 0, 1
+	// 预估总数：client jar + 日志配置 + 每个库/natives 文件（assets 在拿到索引后追加）
+	total := 1
+	if detail.LogFile.URL != "" {
+		total++
+	}
+	for _, lib := range detail.Libraries {
+		if lib.ResolvedURL != "" {
+			total++
+		}
+		if lib.NativeURL != "" {
+			total++
+		}
+	}
+	done := 0
 	var errs []string
 	report := func(msg string) {
 		mu.Lock()
@@ -104,6 +117,21 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 		mark()
 		report("下载客户端...")
 	})
+
+	// 日志配置（部分版本需要，否则 --log4jConfigFile 指向不存在的文件）
+	if detail.LogFile.URL != "" {
+		wg.Add(1)
+		run(func() {
+			defer wg.Done()
+			dest := filepath.Join(instDir, logFileName(detail))
+			if err := downloadFile(detail.LogFile.URL, dest, detail.LogFile.SHA1); err != nil {
+				recordErr("日志配置: " + err.Error())
+				logError("下载日志配置失败: %v", err)
+			}
+			mark()
+			report("下载日志配置...")
+		})
+	}
 
 	for _, lib := range detail.Libraries {
 		l := lib
@@ -232,6 +260,14 @@ func installVersion(versionId string, cb string, sender func(Progress)) (*Respon
 		return &Response{Ok: false, Error: "安装完成但部分文件失败（" + itoaInt(len(errs)) + " 个）: " + errs[0]}, nil
 	}
 	return &Response{Ok: true, Data: map[string]string{"id": versionId, "path": instDir}}, nil
+}
+
+// logFileName 日志配置在版本目录下的文件名
+func logFileName(d *VersionDetail) string {
+	if d.LogFile.Path != "" {
+		return filepath.Base(d.LogFile.Path)
+	}
+	return "logging.xml"
 }
 
 func itoaInt(n int) string {

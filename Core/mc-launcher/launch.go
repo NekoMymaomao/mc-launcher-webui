@@ -94,7 +94,8 @@ func launchVersion(versionId, username string) (*Response, error) {
 		)
 	}
 	if detail.LogArgument != "" {
-		allArgs = append(allArgs, detail.LogArgument)
+		logPath := filepath.Join(instDir, logFileName(detail))
+		allArgs = append(allArgs, strings.ReplaceAll(detail.LogArgument, "${path}", logPath))
 	}
 
 	cmd := exec.Command(java.Path, allArgs...)
